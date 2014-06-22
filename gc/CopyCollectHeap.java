@@ -1,5 +1,7 @@
 package gc;
 
+import java.util.Arrays;  
+
 /**
  * For simplicity, implement Fenichel's algorithm instead of Cheney's algorithm.
  * 
@@ -35,28 +37,95 @@ public class CopyCollectHeap extends Heap {
 	private int toSpace;
 	private int fromSpace;
 	private int allocPtr;
+	private int currentEnd;
+	private int scanPtr;
 
 	/**
 	 * Though the super constructor is invoked and the free list is initialized,
 	 * the free list is not used in the implementation of this copy collector.
 	 */
 	public CopyCollectHeap(int size) {
-		super(size);
-		toSpace = 0;
-		fromSpace = size / 2;
-		allocPtr = toSpace;
+		super(size - size % 2);
+		size = size - size % 2;
+		fromSpace = 0;
+		toSpace = size / 2;
+		allocPtr = fromSpace;
+		currentEnd = size / 2;
 	}
 
 	public void allocate(Var v, int size) throws InsufficientMemory {
 		// TODO
+		try {
+			allocateObject(v, size);
+		} catch (InsufficientMemory e) {
+			collect();
+			allocateObject(v, size);
+		}
 	}
-
+	private void allocateObject(Var v, int size) throws InsufficientMemory {
+		if((currentEnd-allocPtr)<size+2)
+			throw new InsufficientMemory();
+		v.addr = allocPtr + 2;
+		data[v.addr + SIZE] = size;
+		data[v.addr + FORWARD] = -1;
+		allocPtr = allocPtr + 2 + size;
+		Arrays.fill(data, v.addr, v.addr + size, -1);
+	}
+	
 	private void collect() {
 		// TODO
+		allocPtr = toSpace;
+		scanPtr = toSpace;
+		// first copy the reachable
+		for(Var v : reachable){
+			if(!v.isNull()){
+				if(data[v.addr + FORWARD]==-1){
+					v.addr = copy(v.addr);
+				}
+				else
+					v.addr = data[v.addr + FORWARD];
+			}
+		}
+		// next scan the new space
+		while(scanPtr != allocPtr){
+			scanPtr += 2;
+			int size = data[scanPtr+SIZE];
+			for(int i=0;i<size;i++){
+				int cur_addr = data[scanPtr+i];
+				if(cur_addr >= 0){
+					if(data[cur_addr+FORWARD]==-1){
+						data[scanPtr+i] = copy(cur_addr);
+					}
+					else
+						data[scanPtr+i] = data[cur_addr+FORWARD];
+				}
+			}
+			scanPtr += size;
+		}
+		//swap the spaces
+		if(fromSpace==0){
+			currentEnd = 2*toSpace;
+			fromSpace = toSpace;
+			toSpace = 0;
+		}
+		else{
+			currentEnd = fromSpace;
+			toSpace = fromSpace;
+			fromSpace = 0;
+		}
 	}
 
 	private int copy(int addr) {
 		// TODO
-		return 0;
+		allocPtr += 2;
+		int tmp = allocPtr;
+		int size = data[addr+SIZE];
+		data[allocPtr+SIZE] = size;
+		data[allocPtr+FORWARD] = -1;
+		for(int i=0;i<size;i++)
+			data[allocPtr+i] = data[addr+i];
+		allocPtr += size;
+		data[addr + FORWARD] = tmp;
+		return tmp;
 	}
 }
